@@ -23,6 +23,8 @@ import ctypes.util
 import warnings
 from inspect import getargspec
 
+import six
+
 ########################################################################
 
 __all__ = [
@@ -63,7 +65,7 @@ def _find_library_linux():
     return header_name, libname, libfile
         
 def _find_library_nt():
-    import _winreg as winreg # pylint: disable=import-error
+    from six.moves import winreg # pylint: disable=import-error
     regpath = r'SOFTWARE\National Instruments\NI-DAQmx\CurrentVersion'
     reg6432path = r'SOFTWARE\Wow6432Node\National Instruments\NI-DAQmx\CurrentVersion'
     libname = 'nicaiu'
@@ -169,7 +171,7 @@ def _convert_header(header_name, header_module_name):
                 print(name, value, file=sys.stderr)
 
         # DAQmxSuccess is not renamed, because it's unused and I'm lazy.
-        _d = {k.replace("DAQmx_", ""): v for k,v in d.viewitems()}
+        _d = {k.replace("DAQmx_", ""): v for k,v in d.items()}
                  
     try:
         path = os.path.dirname(os.path.abspath (__file__))
@@ -179,12 +181,12 @@ def _convert_header(header_name, header_module_name):
     print('Generating %r' % (fn), file=sys.stderr)
     with open(fn, 'w') as f:
         f.write("# This file is auto-generated. Do not edit!\n\n")
-        f.write("from collections import namedtuple\n\n")
         f.write("_d = %s\n" % pprint.pformat(_d))
-        f.write("DAQmxConstants = namedtuple('DAQmxConstants', _d.keys())\n")
-        f.write("DAQmx = DAQmxConstants(**_d)\n\n")
+        f.write("class DAQmxConstants(object): pass\n")
+        f.write("DAQmx = DAQmxConstants()\n")
+        f.write("DAQmx.__dict__.update(**_d)\n\n")
         f.write("error_map = %s\n" % pprint.pformat(err_map))
-
+        
     print('Please upload generated file %r to http://code.google.com/p/pylibnidaqmx/issues'
           % (fn), file=sys.stderr)
 
@@ -241,7 +243,7 @@ def CHK(return_code, funcname, *args):
                 warning = error_map.get(return_code, return_code)
                 sys.stderr.write('%s%s warning: %s\n' % (funcname, args, warning))
         else:
-            text = '\n  '.join(['']+textwrap.wrap(buf.value, 80)+['-'*10])
+            text = '\n  '.join(['']+textwrap.wrap(buf.value.decode('ascii'), 80)+['-'*10])
             if return_code < 0:
                 raise NIDAQmxRuntimeError('%s%s:%s' % (funcname,args, text))
             else:
@@ -250,23 +252,41 @@ def CHK(return_code, funcname, *args):
 
 ########################################################################
 
-def CALL(name, *args):
-    """
-    Calls libnidaqmx function ``name`` and arguments ``args``.
-    """
-    funcname = 'DAQmx' + name
-    func = getattr(libnidaqmx, funcname)
-    new_args = []
-    for a in args:
-        if isinstance(a, unicode):
-            print(name, 'argument', a, 'is unicode', file=sys.stderr)
-            new_args.append (bytes(a))
-        else:
-            new_args.append (a)
-    # pylint: disable=star-args
-    r = func(*new_args)
-    r = CHK(r, funcname, *new_args)
-    return r
+if six.PY2:
+    def CALL(name, *args):
+        """
+        Calls libnidaqmx function ``name`` and arguments ``args``.
+        """
+        funcname = 'DAQmx' + name
+        func = getattr(libnidaqmx, funcname)
+        new_args = []
+        for a in args:
+            if isinstance(a, unicode):
+                print(name, 'argument', a, 'is unicode', file=sys.stderr)
+                new_args.append (bytes(a))
+            else:
+                new_args.append (a)
+        # pylint: disable=star-args
+        r = func(*new_args)
+        r = CHK(r, funcname, *new_args)
+        return r
+else:
+    def CALL(name, *args):
+        """
+        Calls libnidaqmx function ``name`` and arguments ``args``.
+        """
+        funcname = 'DAQmx' + name
+        func = getattr(libnidaqmx, funcname)
+        new_args = []
+        for a in args:
+            if isinstance(a, str):
+                new_args.append (a.encode('ascii'))
+            else:
+                new_args.append (a)
+        # pylint: disable=star-args
+        r = func(*new_args)
+        r = CHK(r, funcname, *new_args)
+        return r
 
 def make_pattern(paths, _main=True):
     """
@@ -895,7 +915,7 @@ class Task(uInt32):
         val = map_.get(key)
         if val is None:
             raise ValueError('Expected %s %s but got %r'
-                             % (label, '|'.join(map_.viewkeys()), key))
+                             % (label, '|'.join(map_.keys()), key))
         return val
 
     def get_number_of_channels(self):

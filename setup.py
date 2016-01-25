@@ -85,6 +85,7 @@ if __name__=='__main__':
     write_version_py()
 
     from numpy.distutils.core import setup
+#    from setuptools import setup
 
     setup(
         name = NAME,
@@ -97,4 +98,6 @@ if __name__=='__main__':
         long_description = LONG_DESCRIPTION,
         classifiers = filter(None, CLASSIFIERS.split('\n')),
         platforms = PLATFORMS,
-        configuration = configuration)
+        configuration = configuration,
+        use_2to3 = True,
+    )
